@@ -1,0 +1,13 @@
+[project]
+name = "envoy-recorder"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "marimo>=0.18.4",
+    "polars>=1.36.1",
+    "python-dotenv>=1.2.1",
+    "requests>=2.32.5",
+    "ruff>=0.14.10",
+]
