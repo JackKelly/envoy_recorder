@@ -124,7 +124,7 @@ for key, value in data.items():
 
 # Save data to CSV
 df = pl.DataFrame(records, schema=columns)
-csv_filename = Path("pv_data.csv")
+csv_filename = Path("individual_inverter_production.csv")
 include_header = not csv_filename.exists()
 csv_string = df.write_csv(include_header=include_header)
 with csv_filename.open(mode="a") as f:
