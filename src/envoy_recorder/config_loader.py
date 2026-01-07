@@ -1,8 +1,8 @@
 import tomllib
 from pathlib import Path
 
-from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings
+from pydantic import BaseModel, Field, IPvAnyAddress
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class PathsConfig(BaseModel):
@@ -15,7 +15,7 @@ class IntervalsConfig(BaseModel):
 
 
 class EnvoyConfig(BaseModel):
-    ip_address: str
+    ip_address: IPvAnyAddress
     token: str
 
 
@@ -25,10 +25,14 @@ class HuggingFaceConfig(BaseModel):
 
 
 class EnvoyRecorderConfig(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_nested_delimiter="__", env_prefix="ENVOY_RECORDER_"
+    )
+
     paths: PathsConfig = Field(default_factory=PathsConfig)
     intervals: IntervalsConfig = Field(default_factory=IntervalsConfig)
-    envoy: EnvoyConfig = Field(default_factory=EnvoyConfig)
-    hugging_face: HuggingFaceConfig = Field(default_factory=HuggingFaceConfig)
+    envoy: EnvoyConfig
+    hugging_face: HuggingFaceConfig
 
     @classmethod
     def load(cls, path: str = "config.toml"):
