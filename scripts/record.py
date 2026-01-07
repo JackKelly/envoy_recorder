@@ -1,131 +1,82 @@
-import os
+import json
 import time
 from pathlib import Path
+from typing import Any, TypedDict
 
-import polars as pl
 import requests
 import urllib3
-from dotenv import load_dotenv
 
-load_dotenv()  # reads variables from a .env file and sets them in os.environ
+from envoy_recorder.config_loader import EnvoyRecorderConfig
+from envoy_recorder.logging import get_logger
 
-# Disable SSL Warnings (Envoy uses self-signed certs)
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-token = os.environ["ENPHASE_TOKEN"]
-headers = {"Authorization": f"Bearer {token}"}
-url = "http://envoy.local/ivp/pdm/device_data"
-
-data_retrieval_time = round(time.time())
-
-# TODO: Handle exceptions thrown by `get`
-response = requests.get(url, headers=headers, verify=False, timeout=10)
-response.raise_for_status()
-data = response.json()
+log = get_logger(__name__)
 
 
-def flatten_dict(in_dict: dict, prefixes: tuple[str, ...] = ()) -> dict:
-    flat_dict = {}
-    for k, v in in_dict.items():
-        if isinstance(v, dict):
-            new_prefixes = prefixes + (k,)
-            flat_dict.update(flatten_dict(v, new_prefixes))
-        else:
-            new_key = "_".join(prefixes + (k,))
-            assert new_key not in flat_dict, (
-                f"{new_key} already in flat_dict! Old value = {flat_dict[new_key]}, new value = {v}."
-            )
-            flat_dict[new_key] = v
-    return flat_dict
+class WrappedEnvoyData(TypedDict):
+    """Wrap the Envoy data in a new JSON object that includes the retrieval
+    time, to make it trivial to decide when to rotate the filenames."""
+
+    retrieval_time: int  # Unix timestamp in seconds
+    data: dict[str, Any]  # The raw Enphase JSON
 
 
-# Test!
-assert flatten_dict({"a": 1, "b": {"c": 3, "d": {"e": 10}}}) == {
-    "a": 1,
-    "b_c": 3,
-    "b_d_e": 10,
-}
+def fetch_data_from_envoy(config: EnvoyRecorderConfig) -> WrappedEnvoyData:
+    # Disable SSL Warnings (Envoy uses self-signed certs)
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Created with:
-#     columns = list(records[0].keys())
-#     columns.sort()
-# And then manually tweaked!
-columns = [
-    "device_id",
-    "sn",
-    "created",
-    "data_retrieval_time",
-    "active",
-    "chanEid",
-    "modGone",
-    "watts_max",
-    "watts_now",
-    "watts_nowUsed",
-    "wattHours_today",
-    "wattHours_week",
-    "wattHours_yesterday",
-    "lastReading_acCurrentInmA",
-    "lastReading_acFrequencyINmHz",
-    "lastReading_acVoltageINmV",
-    "lastReading_channelTemp",
-    "lastReading_dcCurrentINmA",
-    "lastReading_dcVoltageINmV",
-    "lastReading_duration",
-    "lastReading_eid",
-    "lastReading_endDate",
-    "lastReading_flags",
-    "lastReading_flags_hex",
-    "lastReading_interval_type",
-    "lastReading_issi",
-    "lastReading_joulesProduced",
-    "lastReading_joulesUsed",
-    "lastReading_l1NAcVoltageInmV",
-    "lastReading_l2NAcVoltageInmV",
-    "lastReading_l3NAcVoltageInmV",
-    "lastReading_laggingVArs",
-    "lastReading_leadingVArs",
-    "lastReading_pwrConvErrSecs",
-    "lastReading_pwrConvMaxErrCycles",
-    "lastReading_rssi",
-    "lifetime_createdTime",
-    "lifetime_duration",
-    "lifetime_joulesProduced",
-]
+    token = config.envoy.token
+    ip_address = config.envoy.ip_address
+    headers = {"Authorization": f"Bearer {token}"}
+    retrieval_time = round(time.time())
+    url = f"http://{ip_address}/ivp/pdm/device_data"
 
-records = []
+    log.debug("Fetching data from %s...", url)
+    response = requests.get(url, headers=headers, verify=False, timeout=10)
+    response.raise_for_status()
+    data = response.json()
+    log.debug("Successfully retrieved data from %s.", url)
 
-# The JSON keys are "Device IDs" (e.g., "553648384"), not Serial Numbers.
-for key, value in data.items():
-    if key in ("deviceCount", "deviceDataLimit"):
-        continue
+    return {"retrieval_time": retrieval_time, "data": data}
 
-    # Sanity checks:
-    assert isinstance(value, dict)
-    assert value["devName"] == "pcu"  # PCU = Power Conditioning Unit (Inverter)
-    channels = value["channels"]
-    assert len(channels) == 1, (
-        f"Expected exactly 1 channel for inverter ID {key}, found {len(channels)}."
-    )
 
-    # Extract the data we want, and flatten
-    channel_data = channels[0]
-    flat_channel_data = flatten_dict(channel_data)
-    for k in ("sn", "active", "modGone"):
-        flat_channel_data[k] = value[k]
-    flat_channel_data["device_id"] = key
-    flat_channel_data["data_retrieval_time"] = data_retrieval_time
+def save(config: EnvoyRecorderConfig, data: WrappedEnvoyData):
+    cache_dir: Path = config.paths.cache_dir
+    if not cache_dir.exists():
+        log.info(
+            "Cache directory %s does not exist yet, so we will create it now.",
+            cache_dir,
+        )
+        cache_dir.mkdir(parents=True)
+    live_file: Path = config.paths.live_file
+    log.debug("Appending JSON data to %s", live_file)
+    json_string = json.dumps(data)
+    with open(live_file, "a") as f:
+        f.write(json_string + "\n")
 
-    # Another sanity check (`pl.DataFrame(data, schema)` doesn't throw an error if the schema
-    # contains more or less columns than the data)
-    assert set(flat_channel_data.keys()) == set(columns)
 
-    # Store
-    records.append(flat_channel_data)
+def load_retrieval_time_from_file(live_file: Path) -> int:
+    with live_file.open(mode="r") as f:
+        first_line = f.readline()
+    first_line_dict: WrappedEnvoyData = json.loads(first_line)
+    return first_line_dict["retrieval_time"]
 
-# Save data to CSV
-df = pl.DataFrame(records, schema=columns)
-csv_filename = Path("individual_inverter_production.csv")
-include_header = not csv_filename.exists()
-csv_string = df.write_csv(include_header=include_header)
-with csv_filename.open(mode="a") as f:
-    f.write(csv_string)
+
+def rotate_if_necessary(config: EnvoyRecorderConfig):
+    live_file = config.paths.live_file
+    retrieval_time = load_retrieval_time_from_file(live_file)
+    age_in_seconds = time.time() - retrieval_time
+    log.debug("Age of live file is %f seconds", age_in_seconds)
+    assert age_in_seconds >= 0
+    age_of_live_file_in_minutes = round(age_in_seconds / 60)
+
+    if age_of_live_file_in_minutes > config.intervals.rotate_minutes:
+        archive_filename = config.paths.cache_dir / f"archive_{retrieval_time}.jsonl"
+        log.info("Moving %s to %s", live_file, archive_filename)
+        live_file.rename(archive_filename)
+
+
+if __name__ == "__main__":
+    config = EnvoyRecorderConfig.load()
+    envoy_data = fetch_data_from_envoy(config)
+    save(config, envoy_data)
+    rotate_if_necessary(config)
