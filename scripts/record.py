@@ -64,8 +64,8 @@ def load_retrieval_time_from_file(live_file: Path) -> int:
 def rotate_if_necessary(config: EnvoyRecorderConfig):
     live_file = config.paths.live_file
     retrieval_time = load_retrieval_time_from_file(live_file)
-    age_in_seconds = time.time() - retrieval_time
-    log.debug("Age of live file is %f seconds", age_in_seconds)
+    age_in_seconds = round(time.time()) - retrieval_time
+    log.debug("Age of %s is %d seconds", live_file, age_in_seconds)
     assert age_in_seconds >= 0
     age_of_live_file_in_minutes = round(age_in_seconds / 60)
 
