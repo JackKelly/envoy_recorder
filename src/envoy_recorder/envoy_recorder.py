@@ -3,11 +3,13 @@ import time
 from pathlib import Path
 from typing import TypedDict
 
+import polars as pl
 import requests
 import urllib3
 from requests import Response
 
 from envoy_recorder.config_loader import EnvoyRecorderConfig
+from envoy_recorder.jsonl_to_dataframe import envoy_jsonl_to_dataframe
 from envoy_recorder.logging import get_logger
 
 log = get_logger(__name__)
@@ -27,7 +29,7 @@ class EnvoyRecorder:
 
     def run(self) -> None:
         envoy_data = self.fetch_data_from_envoy()
-        self.save(envoy_data)
+        self.save_to_jsonl_live_file(envoy_data)
         if self.live_file_is_old_enough_for_conversion():
             new_filename = self.rename_live_file()
             append_to_parquet(new_filename)
@@ -43,9 +45,7 @@ class EnvoyRecorder:
         url = f"http://{ip_address}/ivp/pdm/device_data"
 
         log.debug("Fetching data from %s...", url)
-        response: Response = requests.get(
-            url, headers=headers, verify=False, timeout=10
-        )
+        response: Response = requests.get(url, headers=headers, verify=False, timeout=10)
         response.raise_for_status()
         data: str = response.text
         data = data.strip()
@@ -54,7 +54,7 @@ class EnvoyRecorder:
 
         return {"retrieval_time": retrieval_time, "data": data}
 
-    def save(self, data: WrappedEnvoyData):
+    def save_to_jsonl_live_file(self, data: WrappedEnvoyData):
         cache_dir: Path = self.config.paths.cache_dir
         if not cache_dir.exists():
             log.info(
@@ -84,6 +84,21 @@ class EnvoyRecorder:
         new_filename = cache_dir / f"processing_{retrieval_time}.jsonl"
         log.info("Moving %s to %s", old_filename, new_filename)
         return old_filename.rename(new_filename)
+
+    def append_to_parquet(self, jsonl_filename: Path) -> None:
+        new_df = envoy_jsonl_to_dataframe(jsonl_filename)
+        old_df = self.load_most_recent_parquet_partition()
+        merged_df = pl.concat((old_df, new_df))
+        # TODO(Jack):
+        # - Figure out if the merged_df spans multiple months. Or does Polars handle this for us?
+        # - Write the merged data back to disk.
+
+    def load_most_recent_parquet_partition(self) -> pl.DataFrame:
+        """Load from disk.
+
+        If there is no parquet on disk then return an empty dataframe.
+        """
+        # TODO(Jack)
 
 
 def first_retrieval_time_in_jsonl_file(live_file: Path) -> int:
