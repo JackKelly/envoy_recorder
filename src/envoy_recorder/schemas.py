@@ -5,12 +5,12 @@ import patito as pt
 import polars as pl
 
 
-class RawEnvoyData(pt.Model):
+class RawEnvoyDataFrame(pt.Model):
     retrieval_time: int = pt.Field(dtype=pl.Int64)
-    data: dict[str, Any] = pt.Field(dtype=pl.Struct)
+    envoy_data: dict[str, Any] = pt.Field(dtype=pl.Struct)
 
 
-class ProcessedEnvoyData(pt.Model):
+class ProcessedEnvoyDataFrame(pt.Model):
     serial_number: str = pt.Field(dtype=pl.Categorical)
     period_end_time: datetime = pt.Field(dtype=pl.Datetime(time_unit="us", time_zone="UTC"))
     period_duration: timedelta = pt.Field(dtype=pl.Duration(time_unit="us"))

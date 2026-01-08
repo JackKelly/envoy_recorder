@@ -1,28 +1,28 @@
 import patito as pt
 import polars as pl
 
-from envoy_recorder.schemas import ProcessedEnvoyData, RawEnvoyData
+from envoy_recorder.schemas import ProcessedEnvoyDataFrame, RawEnvoyDataFrame
 
 
-def envoy_jsonl_to_dataframe(jsonl) -> pt.DataFrame[ProcessedEnvoyData]:
+def envoy_jsonl_to_dataframe(jsonl) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
     df = pl.read_ndjson(jsonl)
-    df_validated = RawEnvoyData.validate(df)
+    df_validated = RawEnvoyDataFrame.validate(df)
     return _process_dataframe_of_envoy_structs(df_validated)
 
 
 def _process_dataframe_of_envoy_structs(
-    df: pt.DataFrame[RawEnvoyData],
-) -> pt.DataFrame[ProcessedEnvoyData]:
-    # After `read_ndjson`, there are just two columns in the DataFrame: `retrieval_time` and `data`.
-    # For each row, the `data` column contains a struct containing data for every inverter. That
-    # struct looks like this:
+    df: pt.DataFrame[RawEnvoyDataFrame],
+) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
+    # After `read_ndjson`, there are just two columns in the DataFrame: `retrieval_time` and
+    # `envoy_json`. For each row, the `data` column contains a struct containing data for every
+    # inverter. That struct looks like this:
     #
     # {"553648384": {  # <--- device ID for each inverter.
     #     "devName":"pcu", "sn":"482202080196", "active":true, "modGone":true, "channels": [
     #        {"chanEid":1627390225, "created":1767802330, etc...
 
-    # After `unnest("data")`, there will be a column for each device ID.
-    df: pl.DataFrame = df.drop("retrieval_time").unnest("data")
+    # After `unnest("envoy_json")`, there will be a column for each device ID.
+    df: pl.DataFrame = df.drop("retrieval_time").unnest("envoy_json")
 
     # Drop columns we don't care about
     df = df.drop("deviceCount", "deviceDataLimit")
@@ -175,4 +175,4 @@ def _process_dataframe_of_envoy_structs(
         ]
     )
 
-    return ProcessedEnvoyData.validate(df)
+    return ProcessedEnvoyDataFrame.validate(df)

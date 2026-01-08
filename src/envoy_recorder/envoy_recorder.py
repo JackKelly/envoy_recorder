@@ -1,7 +1,7 @@
 import json
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TypedDict
 
 import patito as pt
 import polars as pl
@@ -12,17 +12,21 @@ from requests import Response
 from envoy_recorder.config_loader import EnvoyRecorderConfig
 from envoy_recorder.jsonl_to_dataframe import envoy_jsonl_to_dataframe
 from envoy_recorder.logging import get_logger
-from envoy_recorder.schemas import ProcessedEnvoyData
+from envoy_recorder.schemas import ProcessedEnvoyDataFrame
 
 log = get_logger(__name__)
 
 
-class WrappedEnvoyData(TypedDict):
+@dataclass
+class WrappedEnvoyData:
     """Wrap the Envoy data in a new JSON object that includes the retrieval
     time, to make it trivial to decide when to rotate the filenames."""
 
     retrieval_time: int  # Unix timestamp in seconds
-    data: str  # The raw Enphase JSON
+    envoy_json: str  # The raw Enphase JSON
+
+    def to_json(self) -> str:
+        return f'{{"retrieval_time": {self.retrieval_time}, "envoy_json": {self.envoy_json}}}'
 
 
 class EnvoyRecorder:
@@ -34,7 +38,7 @@ class EnvoyRecorder:
         self.save_to_jsonl_live_file(envoy_data)
         if self.live_file_is_old_enough_for_conversion():
             new_filename = self.rename_live_file()
-            append_to_parquet(new_filename)
+            self.append_to_parquet(new_filename)
 
     def fetch_data_from_envoy(self) -> WrappedEnvoyData:
         # Disable SSL Warnings because the Envoy uses self-signed certs.
@@ -49,12 +53,12 @@ class EnvoyRecorder:
         log.debug("Fetching data from %s...", url)
         response: Response = requests.get(url, headers=headers, verify=False, timeout=10)
         response.raise_for_status()
-        data: str = response.text
-        data = data.strip()
+        envoy_json: str = response.text
+        envoy_json = envoy_json.strip()
         log.debug("Successfully retrieved data from %s.", url)
-        log.debug("First 50 characters of response text: '%s'", data[:50])
+        log.debug("First 50 characters of response text: '%s'", envoy_json[:50])
 
-        return {"retrieval_time": retrieval_time, "data": data}
+        return WrappedEnvoyData(retrieval_time=retrieval_time, envoy_json=envoy_json)
 
     def save_to_jsonl_live_file(self, data: WrappedEnvoyData):
         cache_dir: Path = self.config.paths.cache_dir
@@ -66,7 +70,7 @@ class EnvoyRecorder:
             cache_dir.mkdir(parents=True)
         live_file: Path = self.config.paths.live_file
         log.debug("Appending JSON data to %s", live_file)
-        json_string = json.dumps(data)
+        json_string = data.to_json()
         with open(live_file, "a") as f:
             f.write(json_string + "\n")
 
@@ -92,10 +96,11 @@ class EnvoyRecorder:
         old_df = self.load_most_recent_parquet_partition()
         merged_df = pl.concat((old_df, new_df))
         # TODO(Jack):
-        # - Figure out if the merged_df spans multiple months. Or does Polars handle this for us?
-        # - Write the merged data back to disk.
+        # - Figure out if the merged_df spans multiple months.
+        # - Write the merged data back to disk, perhaps creating new directory if necessary.
+        # - Only if everything works, then delete processing_[timestamp].jsonl
 
-    def load_most_recent_parquet_partition(self) -> pt.DataFrame[ProcessedEnvoyData]:
+    def load_most_recent_parquet_partition(self) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
         """Load from disk.
 
         If there is no parquet on disk then return an empty dataframe.
@@ -106,5 +111,5 @@ class EnvoyRecorder:
 def first_retrieval_time_in_jsonl_file(live_file: Path) -> int:
     with live_file.open(mode="r") as f:
         first_line = f.readline()
-    first_line_dict: WrappedEnvoyData = json.loads(first_line)
+    first_line_dict = json.loads(first_line)
     return first_line_dict["retrieval_time"]
