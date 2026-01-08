@@ -1,12 +1,18 @@
+import patito as pt
 import polars as pl
 
+from envoy_recorder.schemas import ProcessedEnvoyData, RawEnvoyData
 
-def envoy_jsonl_to_dataframe(jsonl) -> pl.DataFrame:
+
+def envoy_jsonl_to_dataframe(jsonl) -> pt.DataFrame[ProcessedEnvoyData]:
     df = pl.read_ndjson(jsonl)
-    return _process_dataframe_of_envoy_structs(df)
+    df_validated = RawEnvoyData.validate(df)
+    return _process_dataframe_of_envoy_structs(df_validated)
 
 
-def _process_dataframe_of_envoy_structs(df: pl.DataFrame) -> pl.DataFrame:
+def _process_dataframe_of_envoy_structs(
+    df: pt.DataFrame[RawEnvoyData],
+) -> pt.DataFrame[ProcessedEnvoyData]:
     # After `read_ndjson`, there are just two columns in the DataFrame: `retrieval_time` and `data`.
     # For each row, the `data` column contains a struct containing data for every inverter. That
     # struct looks like this:
@@ -16,7 +22,7 @@ def _process_dataframe_of_envoy_structs(df: pl.DataFrame) -> pl.DataFrame:
     #        {"chanEid":1627390225, "created":1767802330, etc...
 
     # After `unnest("data")`, there will be a column for each device ID.
-    df = df.drop("retrieval_time").unnest("data")
+    df: pl.DataFrame = df.drop("retrieval_time").unnest("data")
 
     # Drop columns we don't care about
     df = df.drop("deviceCount", "deviceDataLimit")
@@ -169,4 +175,4 @@ def _process_dataframe_of_envoy_structs(df: pl.DataFrame) -> pl.DataFrame:
         ]
     )
 
-    return df
+    return ProcessedEnvoyData.validate(df)

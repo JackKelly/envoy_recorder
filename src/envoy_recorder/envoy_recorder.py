@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 from typing import TypedDict
 
+import patito as pt
 import polars as pl
 import requests
 import urllib3
@@ -11,6 +12,7 @@ from requests import Response
 from envoy_recorder.config_loader import EnvoyRecorderConfig
 from envoy_recorder.jsonl_to_dataframe import envoy_jsonl_to_dataframe
 from envoy_recorder.logging import get_logger
+from envoy_recorder.schemas import ProcessedEnvoyData
 
 log = get_logger(__name__)
 
@@ -93,7 +95,7 @@ class EnvoyRecorder:
         # - Figure out if the merged_df spans multiple months. Or does Polars handle this for us?
         # - Write the merged data back to disk.
 
-    def load_most_recent_parquet_partition(self) -> pl.DataFrame:
+    def load_most_recent_parquet_partition(self) -> pt.DataFrame[ProcessedEnvoyData]:
         """Load from disk.
 
         If there is no parquet on disk then return an empty dataframe.
