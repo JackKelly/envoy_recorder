@@ -7,7 +7,7 @@ import polars as pl
 
 class RawEnvoyDataFrame(pt.Model):
     retrieval_time: int = pt.Field(dtype=pl.Int64)
-    envoy_data: dict[str, Any] = pt.Field(dtype=pl.Struct)
+    envoy_json: dict[str, Any] = pt.Field(dtype=pl.Struct)
 
 
 class ProcessedEnvoyDataFrame(pt.Model):

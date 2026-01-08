@@ -1,17 +1,18 @@
 import patito as pt
 import polars as pl
 
-from envoy_recorder.schemas import ProcessedEnvoyDataFrame, RawEnvoyDataFrame
+from envoy_recorder.schemas import ProcessedEnvoyDataFrame
 
 
 def envoy_jsonl_to_dataframe(jsonl) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
     df = pl.read_ndjson(jsonl)
-    df_validated = RawEnvoyDataFrame.validate(df)
-    return _process_dataframe_of_envoy_structs(df_validated)
+    # We skip RawEnvoyDataFrame.validate(df) because patito has trouble
+    # with pl.Struct when the fields are dynamic.
+    return _process_dataframe_of_envoy_structs(df)
 
 
 def _process_dataframe_of_envoy_structs(
-    df: pt.DataFrame[RawEnvoyDataFrame],
+    df: pl.DataFrame,
 ) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
     # After `read_ndjson`, there are just two columns in the DataFrame: `retrieval_time` and
     # `envoy_json`. For each row, the `data` column contains a struct containing data for every
@@ -22,10 +23,10 @@ def _process_dataframe_of_envoy_structs(
     #        {"chanEid":1627390225, "created":1767802330, etc...
 
     # After `unnest("envoy_json")`, there will be a column for each device ID.
-    df: pl.DataFrame = df.drop("retrieval_time").unnest("envoy_json")
+    df = df.drop("retrieval_time").unnest("envoy_json")
 
     # Drop columns we don't care about
-    df = df.drop("deviceCount", "deviceDataLimit")
+    df = df.drop(["deviceCount", "deviceDataLimit"])
 
     # Turn the wide format (where each device ID is its own column) to a tall and long format where
     # there's a single device ID column, and a `stats` column which holds a struct containing data
@@ -57,17 +58,19 @@ def _process_dataframe_of_envoy_structs(
         pl.col("lastReading").struct.unnest(),
     )
     df = df.drop(
-        "eid",
-        "interval_type",
-        "flags",
-        "joulesUsed",
-        "leadingVArs",
-        "laggingVArs",
-        "l1NAcVoltageInmV",
-        "l2NAcVoltageInmV",
-        "l3NAcVoltageInmV",
-        "rssi",
-        "issi",
+        [
+            "eid",
+            "interval_type",
+            "flags",
+            "joulesUsed",
+            "leadingVArs",
+            "laggingVArs",
+            "l1NAcVoltageInmV",
+            "l2NAcVoltageInmV",
+            "l3NAcVoltageInmV",
+            "rssi",
+            "issi",
+        ]
     )
     df = df.rename(
         {

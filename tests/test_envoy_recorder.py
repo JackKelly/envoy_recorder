@@ -1,5 +1,6 @@
 import json
 import pytest
+
 from envoy_recorder.envoy_recorder import WrappedEnvoyData
 
 
