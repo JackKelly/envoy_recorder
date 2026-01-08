@@ -105,7 +105,10 @@ class EnvoyRecorder:
 
         If there is no parquet on disk then return an empty dataframe.
         """
-        # TODO(Jack)
+        # TODO(Jack): Implement real loading.
+        return pt.DataFrame[ProcessedEnvoyDataFrame](
+            pl.DataFrame(schema=ProcessedEnvoyDataFrame.dtypes)
+        )
 
 
 def first_retrieval_time_in_jsonl_file(live_file: Path) -> int:

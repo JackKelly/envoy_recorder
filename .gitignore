@@ -17,7 +17,6 @@ wheels/
 *.json
 
 *.log
+
 config.toml
-csv_files/
-logs/
-*.jsonl
+solar_cache/

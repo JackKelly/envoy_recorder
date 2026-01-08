@@ -26,7 +26,7 @@ def _process_dataframe_of_envoy_structs(
     df = df.drop("retrieval_time").unnest("envoy_json")
 
     # Drop columns we don't care about
-    df = df.drop(["deviceCount", "deviceDataLimit"])
+    df = df.drop(["deviceCount", "deviceDataLimit"], strict=False)
 
     # Turn the wide format (where each device ID is its own column) to a tall and long format where
     # there's a single device ID column, and a `stats` column which holds a struct containing data
@@ -70,7 +70,8 @@ def _process_dataframe_of_envoy_structs(
             "l3NAcVoltageInmV",
             "rssi",
             "issi",
-        ]
+        ],
+        strict=False,
     )
     df = df.rename(
         {
