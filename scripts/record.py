@@ -1,7 +1,7 @@
 import json
 import time
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import TypedDict
 
 import requests
 import urllib3
@@ -18,11 +18,11 @@ class WrappedEnvoyData(TypedDict):
     time, to make it trivial to decide when to rotate the filenames."""
 
     retrieval_time: int  # Unix timestamp in seconds
-    data: dict[str, Any]  # The raw Enphase JSON
+    data: str  # The raw Enphase JSON
 
 
 def fetch_data_from_envoy(config: EnvoyRecorderConfig) -> WrappedEnvoyData:
-    # Disable SSL Warnings (Envoy uses self-signed certs)
+    # Disable SSL Warnings because the Envoy uses self-signed certs.
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     token = config.envoy.token
@@ -34,17 +34,9 @@ def fetch_data_from_envoy(config: EnvoyRecorderConfig) -> WrappedEnvoyData:
     log.debug("Fetching data from %s...", url)
     response: Response = requests.get(url, headers=headers, verify=False, timeout=10)
     response.raise_for_status()
-    try:
-        data = response.json()
-    except requests.exceptions.JSONDecodeError:
-        log.exception(
-            "Failed to decode JSON from Envoy! URL=%s. The raw text response from the Envoy is: '%s'",
-            url,
-            response.text,
-        )
-        raise
-    else:
-        log.debug("Successfully retrieved data from %s.", url)
+    data: str = response.text
+    data = data.strip()
+    log.debug("Successfully retrieved data from %s.", url)
 
     return {"retrieval_time": retrieval_time, "data": data}
 
