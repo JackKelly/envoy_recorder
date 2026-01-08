@@ -5,6 +5,7 @@ from typing import Any, TypedDict
 
 import requests
 import urllib3
+from requests import Response
 
 from envoy_recorder.config_loader import EnvoyRecorderConfig
 from envoy_recorder.logging import get_logger
@@ -31,10 +32,19 @@ def fetch_data_from_envoy(config: EnvoyRecorderConfig) -> WrappedEnvoyData:
     url = f"http://{ip_address}/ivp/pdm/device_data"
 
     log.debug("Fetching data from %s...", url)
-    response = requests.get(url, headers=headers, verify=False, timeout=10)
+    response: Response = requests.get(url, headers=headers, verify=False, timeout=10)
     response.raise_for_status()
-    data = response.json()
-    log.debug("Successfully retrieved data from %s.", url)
+    try:
+        data = response.json()
+    except requests.exceptions.JSONDecodeError:
+        log.exception(
+            "Failed to decode JSON from Envoy! URL=%s. The raw text response from the Envoy is: '%s'",
+            url,
+            response.text,
+        )
+        raise
+    else:
+        log.debug("Successfully retrieved data from %s.", url)
 
     return {"retrieval_time": retrieval_time, "data": data}
 
@@ -75,8 +85,16 @@ def rotate_if_necessary(config: EnvoyRecorderConfig):
         live_file.rename(archive_filename)
 
 
-if __name__ == "__main__":
+def main() -> None:
     config = EnvoyRecorderConfig.load()
     envoy_data = fetch_data_from_envoy(config)
     save(config, envoy_data)
     rotate_if_necessary(config)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except:
+        log.exception("Exception raised in main()!")
+        raise
