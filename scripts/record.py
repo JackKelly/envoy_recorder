@@ -37,6 +37,7 @@ def fetch_data_from_envoy(config: EnvoyRecorderConfig) -> WrappedEnvoyData:
     data: str = response.text
     data = data.strip()
     log.debug("Successfully retrieved data from %s.", url)
+    log.debug("First 50 characters of response text: '%s'", data[:50])
 
     return {"retrieval_time": retrieval_time, "data": data}
 
@@ -56,7 +57,7 @@ def save(config: EnvoyRecorderConfig, data: WrappedEnvoyData):
         f.write(json_string + "\n")
 
 
-def load_retrieval_time_from_file(live_file: Path) -> int:
+def first_retrieval_time_in_jsonl_file(live_file: Path) -> int:
     with live_file.open(mode="r") as f:
         first_line = f.readline()
     first_line_dict: WrappedEnvoyData = json.loads(first_line)
@@ -65,7 +66,7 @@ def load_retrieval_time_from_file(live_file: Path) -> int:
 
 def rotate_if_necessary(config: EnvoyRecorderConfig):
     live_file = config.paths.live_file
-    retrieval_time = load_retrieval_time_from_file(live_file)
+    retrieval_time = first_retrieval_time_in_jsonl_file(live_file)
     age_in_seconds = round(time.time()) - retrieval_time
     log.debug("Age of %s is %d seconds", live_file, age_in_seconds)
     assert age_in_seconds >= 0
