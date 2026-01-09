@@ -19,3 +19,5 @@ class ProcessedEnvoyDataFrame(pt.Model):
     power_conversion_max_error_cycles: int = pt.Field(dtype=pl.Int32)
     flags: int = pt.Field(dtype=pl.UInt64)
     watt_hours_today: int = pt.Field(dtype=pl.UInt16)
+    year: int = pt.Field(dtype=pl.UInt16)
+    month: int = pt.Field(dtype=pl.UInt8)

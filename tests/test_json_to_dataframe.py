@@ -3,12 +3,12 @@ from pathlib import Path
 
 import polars as pl
 
-from envoy_recorder.json_to_dataframe import envoy_json_files_to_dataframe
+from envoy_recorder.json_to_dataframe import directory_of_json_files_to_dataframe
 
 
 def test_envoy_json_to_dataframe_real_data():
     json_path = Path(__file__).parent.parent / "example_envoy_json_data"
-    df = envoy_json_files_to_dataframe(json_path)
+    df = directory_of_json_files_to_dataframe(json_path)
 
     assert len(df) > 0
     assert "serial_number" in df.columns
@@ -73,7 +73,7 @@ def test_filtering_non_pcu_devices(tmp_path: Path):
     with open(json_path, "w") as f:
         json.dump(envoy_json, f)
 
-    df = envoy_json_files_to_dataframe(json_path)
+    df = directory_of_json_files_to_dataframe(tmp_path)
 
     # Only SN123 should be present
     assert len(df) == 1
@@ -129,7 +129,7 @@ def test_deduplication(tmp_path: Path):
         with open(tmp_path / f"dedupe_{i}.json", mode="w") as f:
             json.dump(device_data, f)
 
-    df = envoy_json_files_to_dataframe(tmp_path)
+    df = directory_of_json_files_to_dataframe(tmp_path)
 
     # Should only have 1 row after deduplication
     assert len(df) == 1

@@ -1,4 +1,6 @@
+import shutil
 import time
+from datetime import date
 from pathlib import Path
 
 import patito as pt
@@ -8,7 +10,7 @@ import urllib3
 from requests import Response
 
 from envoy_recorder.config_loader import EnvoyRecorderConfig
-from envoy_recorder.json_to_dataframe import envoy_json_files_to_dataframe
+from envoy_recorder.json_to_dataframe import PRIMARY_KEYS, directory_of_json_files_to_dataframe
 from envoy_recorder.logging import get_logger
 from envoy_recorder.schemas import ProcessedEnvoyDataFrame
 
@@ -80,21 +82,46 @@ class EnvoyRecorder:
         return old_path.rename(new_path)
 
     def _append_to_parquet(self, buffer_processing_path: Path) -> None:
-        new_df = envoy_json_files_to_dataframe(buffer_processing_path)
-        old_df = self._load_most_recent_parquet_partition()
-        merged_df = pl.concat((old_df, new_df))
-        # TODO(Jack):
-        # - Try loading and saving using only Polars. If that fails then load and save manually:
-        # - Figure out if the merged_df spans multiple months.
-        # - Write the merged data back to disk, perhaps creating new directory if necessary.
-        # - Only if everything works, then delete processing_[timestamp].json
+        new_df = directory_of_json_files_to_dataframe(buffer_processing_path)
+        old_df = self._load_last_month_of_parquet_archive()
+        merged_df = old_df.vstack(new_df)
+        merged_df = merged_df.unique(subset=PRIMARY_KEYS)
+        merged_df = merged_df.sort(PRIMARY_KEYS)
+        start, end = merged_df.select(
+            start=pl.col("period_end_time").min(), end=pl.col("period_end_time").max()
+        )
+        log.info(
+            "Writing %d rows of data to the parquet archive, from %s to %s",
+            merged_df.height,
+            start,
+            end,
+        )
+        merged_df.write_parquet(self._config.paths.parquet_archive, partition_by=["year", "month"])
+        shutil.rmtree(buffer_processing_path)
 
-    def _load_most_recent_parquet_partition(self) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
+    def _load_last_month_of_parquet_archive(self) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
         """Load from disk.
 
         If there is no parquet on disk then return an empty dataframe.
         """
-        # TODO(Jack): Implement real loading.
-        return pt.DataFrame[ProcessedEnvoyDataFrame](
-            pl.DataFrame(schema=ProcessedEnvoyDataFrame.dtypes)
+        is_empty = not any(self._config.paths.parquet_archive.iterdir())
+        if is_empty:
+            # Return empty DataFrame.
+            log.info("The parquet archive is currently empty.")
+            df = pl.DataFrame(schema=ProcessedEnvoyDataFrame.dtypes)
+            return pt.DataFrame[ProcessedEnvoyDataFrame](df)
+
+        df = pl.scan_parquet(self._config.paths.parquet_archive)
+
+        # The Parquet archive uses monthly Hive partitions. Load the last month of data:
+        last_date: date = df.select(pl.col("period_end_time").max()).collect().item().date()
+        first_day_of_last_month = last_date.replace(day=1)
+        df = df.filter(pl.col("period_end_time") >= first_day_of_last_month)
+        df = df.collect()
+        log.info(
+            "Loaded %d rows from the parquet archive, starting at %s.",
+            df.height,
+            first_day_of_last_month.strftime("%Y-%m-%d"),
         )
+
+        return pt.DataFrame[ProcessedEnvoyDataFrame](df)

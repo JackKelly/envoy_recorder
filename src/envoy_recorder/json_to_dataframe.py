@@ -8,10 +8,21 @@ from envoy_recorder.schemas import ProcessedEnvoyDataFrame
 
 log = get_logger(__name__)
 
+# After all the jiggling around we've done above, the rows will be in arbitrary order, so we
+# have to sort them as a final step. Sorting by serial number *first* should make the data
+# easier to compress because the values should change fairly smoothly across rows, which Parquet
+# likes because Parquet it is a columnar format.
+PRIMARY_KEYS = ("serial_number", "period_end_time")
 
-def envoy_json_files_to_dataframe(p: Path) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
-    files = list(p.glob("*.json"))
+PARTITION_KEYS = ("year", "month")
+
+
+def directory_of_json_files_to_dataframe(directory: Path) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
+    assert directory.exists(), f"{directory} does not exist!"
+    assert directory.is_dir(), f"{directory} is not a directory!"
+    files = list(directory.glob("*.json"))
     log.info("Loading %d json files into Polars DataFrame...", len(files))
+    assert len(files) > 0, f"No *.json files found in directory {directory}!"
 
     df = pl.concat([pl.read_json(f) for f in files])
 
@@ -113,6 +124,12 @@ def envoy_json_files_to_dataframe(p: Path) -> pt.DataFrame[ProcessedEnvoyDataFra
         pl.duration(seconds="period_duration").alias("period_duration"),
     )
 
+    # Append 'year' and 'month' columns for the Hive partitioning
+    df = df.with_columns(
+        pl.col("period_end_time").dt.year().alias("year").cast(pl.UInt16),
+        pl.col("period_end_time").dt.month().alias("month").cast(pl.UInt8),
+    )
+
     # Cast types
     df = df.cast(
         {
@@ -149,11 +166,7 @@ def envoy_json_files_to_dataframe(p: Path) -> pt.DataFrame[ProcessedEnvoyDataFra
         }
     )
 
-    # After all the jiggling around we've done above, the rows will be in arbitrary order, so we
-    # have to sort them as a final step. Sorting by serial number *first* should make the data
-    # easier to compress because the values should change fairly smoothly across rows, which Parquet
-    # likes because Parquet it is a columnar format.
-    df = df.sort(["serial_number", "period_end_time"])
+    df = df.sort(PRIMARY_KEYS)
 
     # Force the column ordering. Polars.concat requires the column ordering to be consistent.
     df = df.select(
@@ -172,6 +185,8 @@ def envoy_json_files_to_dataframe(p: Path) -> pt.DataFrame[ProcessedEnvoyDataFra
             "power_conversion_max_error_cycles",
             "flags",
             "watt_hours_today",
+            "year",
+            "month",
         ]
     )
 
