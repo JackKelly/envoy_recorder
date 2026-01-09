@@ -26,7 +26,7 @@ class EnvoyRecorder:
         envoy_data = self._fetch_data_from_envoy()
         self._save_to_live_buffer(envoy_data)
         if self._live_buffer_is_old_enough_to_flush():
-            log.info("Flushing incoming live buffer...")
+            log.info("Flushing incoming live buffer to parquet archive...")
             new_live_buffer_path = self._move_live_buffer()
             self._append_to_parquet(new_live_buffer_path)
 
@@ -45,7 +45,11 @@ class EnvoyRecorder:
         envoy_json: str = response.text
         log.debug("Successfully retrieved data from %s.", url)
         N_CHARS = 100
-        log.debug("First %d characters of response text: '%s'", N_CHARS, envoy_json[:N_CHARS])
+        log.debug(
+            "First %d characters of response text (after removing whitespace for logging): '%s'",
+            N_CHARS,
+            envoy_json[:N_CHARS].replace("\n", "").replace(" ", ""),
+        )
 
         return envoy_json
 
@@ -61,7 +65,9 @@ class EnvoyRecorder:
         if oldest_buffer_file_ts is None:
             return False
         age_in_seconds = round(time.time()) - oldest_buffer_file_ts
-        log.debug("Age of live buffer is %d seconds", age_in_seconds)
+        log.debug(
+            "It has been %d seconds since the current live buffer was started.", age_in_seconds
+        )
         assert age_in_seconds >= 0
         age_of_live_file_in_minutes = round(age_in_seconds / 60)
         return age_of_live_file_in_minutes > self._config.intervals.flush_buffer_every_n_minutes
@@ -91,12 +97,20 @@ class EnvoyRecorder:
             start=pl.col("period_end_time").min(), end=pl.col("period_end_time").max()
         )
         log.info(
-            "Writing %d rows of data to the parquet archive, from %s to %s",
+            "The merged dataframe has %d rows of data, from %s to %s.",
             merged_df.height,
-            start,
-            end,
+            start.item(),
+            end.item(),
         )
-        merged_df.write_parquet(self._config.paths.parquet_archive, partition_by=["year", "month"])
+        if merged_df.equals(old_df):
+            # Don't bother writing a new Parquet to disk if there's no new data. For example, this
+            # will happen at night, when the inverters stop reporting data but the envoy repeats the
+            # last reading from earlier in the day.
+            log.info("merged dataframe == old dataframe. Nothing to save to disk.")
+        else:
+            merged_df.write_parquet(
+                self._config.paths.parquet_archive, partition_by=["year", "month"]
+            )
         shutil.rmtree(buffer_processing_path)
 
     def _load_last_month_of_parquet_archive(self) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
