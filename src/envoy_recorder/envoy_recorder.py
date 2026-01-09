@@ -109,7 +109,9 @@ class EnvoyRecorder:
             log.info("merged dataframe == old dataframe. Nothing to save to disk.")
         else:
             merged_df.write_parquet(
-                self._config.paths.parquet_archive, partition_by=["year", "month"]
+                self._config.paths.parquet_archive,
+                partition_by=["year", "month"],
+                compression="zstd",
             )
         shutil.rmtree(buffer_processing_path)
 
