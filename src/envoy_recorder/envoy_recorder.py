@@ -24,8 +24,9 @@ class EnvoyRecorder:
         envoy_data = self._fetch_data_from_envoy()
         self._save_to_live_buffer(envoy_data)
         if self._live_buffer_is_old_enough_to_flush():
-            new_life_buffer_path = self._move_live_buffer()
-            self._append_to_parquet(new_life_buffer_path)
+            log.info("Flushing incoming live buffer...")
+            new_live_buffer_path = self._move_live_buffer()
+            self._append_to_parquet(new_live_buffer_path)
 
     def _fetch_data_from_envoy(self) -> str:
         # Disable SSL Warnings because the Envoy uses self-signed certs.
@@ -40,10 +41,9 @@ class EnvoyRecorder:
         response: Response = requests.get(url, headers=headers, verify=False, timeout=10)
         response.raise_for_status()
         envoy_json: str = response.text
-        # The JSON must be compact for polars.scan_ndjson to open multiple files.
-        envoy_json = envoy_json.strip()
         log.debug("Successfully retrieved data from %s.", url)
-        log.debug("First 50 characters of response text: '%s'", envoy_json[:50])
+        N_CHARS = 100
+        log.debug("First %d characters of response text: '%s'", N_CHARS, envoy_json[:N_CHARS])
 
         return envoy_json
 
@@ -69,7 +69,7 @@ class EnvoyRecorder:
         if len(live_buffer_filenames) == 0:
             return None
         else:
-            return live_buffer_filenames[0].stem
+            return int(live_buffer_filenames[0].stem)
 
     def _move_live_buffer(self) -> Path:
         """Moving is an atomic filesystem operation."""
@@ -80,7 +80,7 @@ class EnvoyRecorder:
         return old_path.rename(new_path)
 
     def _append_to_parquet(self, buffer_processing_path: Path) -> None:
-        new_df = envoy_json_files_to_dataframe(buffer_processing_path / "*.json")
+        new_df = envoy_json_files_to_dataframe(buffer_processing_path)
         old_df = self._load_most_recent_parquet_partition()
         merged_df = pl.concat((old_df, new_df))
         # TODO(Jack):

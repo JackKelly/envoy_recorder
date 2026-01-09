@@ -3,11 +3,17 @@ from pathlib import Path
 import patito as pt
 import polars as pl
 
+from envoy_recorder.logging import get_logger
 from envoy_recorder.schemas import ProcessedEnvoyDataFrame
+
+log = get_logger(__name__)
 
 
 def envoy_json_files_to_dataframe(p: Path) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
-    df = pl.scan_ndjson(p)
+    files = list(p.glob("*.json"))
+    log.info("Loading %d json files into Polars DataFrame...", len(files))
+
+    df = pl.concat([pl.read_json(f) for f in files])
 
     # After `scan_ndjson` there's a column per device, and columns "deviceCount" and
     # "deviceDataLimit". Each device column contains a struct that looks like this:
@@ -169,6 +175,6 @@ def envoy_json_files_to_dataframe(p: Path) -> pt.DataFrame[ProcessedEnvoyDataFra
         ]
     )
 
-    df = df.collect()
+    log.info("Successfully read %d rows of data into a Polars DataFrame.", df.height)
 
     return ProcessedEnvoyDataFrame.validate(df)
