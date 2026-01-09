@@ -9,14 +9,10 @@ wheels/
 # Virtual environments
 .venv
 
-# python-dotenv
-.env
+__marimo__
 
-# Data
-*.csv
-*.json
-
+# Specific to envoy_recorder
+data/
 *.log
-
 config.toml
-solar_cache/
+old/

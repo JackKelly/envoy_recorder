@@ -1,6 +1,4 @@
-import json
 import time
-from dataclasses import dataclass
 from pathlib import Path
 
 import patito as pt
@@ -10,97 +8,88 @@ import urllib3
 from requests import Response
 
 from envoy_recorder.config_loader import EnvoyRecorderConfig
-from envoy_recorder.jsonl_to_dataframe import envoy_jsonl_to_dataframe
+from envoy_recorder.json_to_dataframe import envoy_json_files_to_dataframe
 from envoy_recorder.logging import get_logger
 from envoy_recorder.schemas import ProcessedEnvoyDataFrame
 
 log = get_logger(__name__)
 
 
-@dataclass
-class WrappedEnvoyData:
-    """Wrap the Envoy data in a new JSON object that includes the retrieval
-    time, to make it trivial to decide when to rotate the filenames."""
-
-    retrieval_time: int  # Unix timestamp in seconds
-    envoy_json: str  # The raw Enphase JSON
-
-    def to_json(self) -> str:
-        return f'{{"retrieval_time": {self.retrieval_time}, "envoy_json": {self.envoy_json}}}'
-
-
 class EnvoyRecorder:
     def __init__(self) -> None:
-        self.config = EnvoyRecorderConfig.load()
+        self._config = EnvoyRecorderConfig.load()
+        self._config.paths.create_directories()
 
     def run(self) -> None:
-        envoy_data = self.fetch_data_from_envoy()
-        self.save_to_jsonl_live_file(envoy_data)
-        if self.live_file_is_old_enough_for_conversion():
-            new_filename = self.rename_live_file()
-            self.append_to_parquet(new_filename)
+        envoy_data = self._fetch_data_from_envoy()
+        self._save_to_live_buffer(envoy_data)
+        if self._live_buffer_is_old_enough_to_flush():
+            new_life_buffer_path = self._move_live_buffer()
+            self._append_to_parquet(new_life_buffer_path)
 
-    def fetch_data_from_envoy(self) -> WrappedEnvoyData:
+    def _fetch_data_from_envoy(self) -> str:
         # Disable SSL Warnings because the Envoy uses self-signed certs.
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-        token = self.config.envoy.token
-        ip_address = self.config.envoy.ip_address
+        token = self._config.envoy.token
+        ip_address = self._config.envoy.ip_address
         headers = {"Authorization": f"Bearer {token}"}
-        retrieval_time = round(time.time())
         url = f"http://{ip_address}/ivp/pdm/device_data"
 
         log.debug("Fetching data from %s...", url)
         response: Response = requests.get(url, headers=headers, verify=False, timeout=10)
         response.raise_for_status()
         envoy_json: str = response.text
+        # The JSON must be compact for polars.scan_ndjson to open multiple files.
         envoy_json = envoy_json.strip()
         log.debug("Successfully retrieved data from %s.", url)
         log.debug("First 50 characters of response text: '%s'", envoy_json[:50])
 
-        return WrappedEnvoyData(retrieval_time=retrieval_time, envoy_json=envoy_json)
+        return envoy_json
 
-    def save_to_jsonl_live_file(self, data: WrappedEnvoyData):
-        cache_dir: Path = self.config.paths.cache_dir
-        if not cache_dir.exists():
-            log.info(
-                "Cache directory %s does not exist yet, so we will create it now.",
-                cache_dir,
-            )
-            cache_dir.mkdir(parents=True)
-        live_file: Path = self.config.paths.live_file
-        log.debug("Appending JSON data to %s", live_file)
-        json_string = data.to_json()
-        with open(live_file, "a") as f:
-            f.write(json_string + "\n")
+    def _save_to_live_buffer(self, envoy_json: str):
+        t = round(time.time())
+        filename = self._config.paths.live_buffer_incoming / f"{t}.json"
+        log.debug("Writing Envoy JSON data to %s", filename)
+        with open(filename, "w") as f:
+            f.write(envoy_json)
 
-    def live_file_is_old_enough_for_conversion(self) -> bool:
-        live_file = self.config.paths.live_file
-        retrieval_time = first_retrieval_time_in_jsonl_file(live_file)
-        age_in_seconds = round(time.time()) - retrieval_time
-        log.debug("Age of %s is %d seconds", live_file, age_in_seconds)
+    def _live_buffer_is_old_enough_to_flush(self) -> bool:
+        oldest_buffer_file_ts = self._timestamp_of_oldest_file_in_live_buffer()
+        if oldest_buffer_file_ts is None:
+            return False
+        age_in_seconds = round(time.time()) - oldest_buffer_file_ts
+        log.debug("Age of live buffer is %d seconds", age_in_seconds)
         assert age_in_seconds >= 0
         age_of_live_file_in_minutes = round(age_in_seconds / 60)
-        return age_of_live_file_in_minutes > self.config.intervals.rotate_minutes
+        return age_of_live_file_in_minutes > self._config.intervals.flush_buffer_every_n_minutes
 
-    def rename_live_file(self) -> Path:
-        old_filename = self.config.paths.live_file
-        cache_dir = self.config.paths.cache_dir
-        retrieval_time = first_retrieval_time_in_jsonl_file(old_filename)
-        new_filename = cache_dir / f"processing_{retrieval_time}.jsonl"
-        log.info("Moving %s to %s", old_filename, new_filename)
-        return old_filename.rename(new_filename)
+    def _timestamp_of_oldest_file_in_live_buffer(self) -> int | None:
+        live_buffer_filenames = sorted(self._config.paths.live_buffer_incoming.glob("*.json"))
+        if len(live_buffer_filenames) == 0:
+            return None
+        else:
+            return live_buffer_filenames[0].stem
 
-    def append_to_parquet(self, jsonl_filename: Path) -> None:
-        new_df = envoy_jsonl_to_dataframe(jsonl_filename)
-        old_df = self.load_most_recent_parquet_partition()
+    def _move_live_buffer(self) -> Path:
+        """Moving is an atomic filesystem operation."""
+        old_path = self._config.paths.live_buffer_incoming
+        t = round(time.time())
+        new_path = self._config.paths.live_buffer / f"processing_{t}"
+        log.info("Moving %s to %s", old_path, new_path)
+        return old_path.rename(new_path)
+
+    def _append_to_parquet(self, buffer_processing_path: Path) -> None:
+        new_df = envoy_json_files_to_dataframe(buffer_processing_path / "*.json")
+        old_df = self._load_most_recent_parquet_partition()
         merged_df = pl.concat((old_df, new_df))
         # TODO(Jack):
+        # - Try loading and saving using only Polars. If that fails then load and save manually:
         # - Figure out if the merged_df spans multiple months.
         # - Write the merged data back to disk, perhaps creating new directory if necessary.
-        # - Only if everything works, then delete processing_[timestamp].jsonl
+        # - Only if everything works, then delete processing_[timestamp].json
 
-    def load_most_recent_parquet_partition(self) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
+    def _load_most_recent_parquet_partition(self) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
         """Load from disk.
 
         If there is no parquet on disk then return an empty dataframe.
@@ -109,10 +98,3 @@ class EnvoyRecorder:
         return pt.DataFrame[ProcessedEnvoyDataFrame](
             pl.DataFrame(schema=ProcessedEnvoyDataFrame.dtypes)
         )
-
-
-def first_retrieval_time_in_jsonl_file(live_file: Path) -> int:
-    with live_file.open(mode="r") as f:
-        first_line = f.readline()
-    first_line_dict = json.loads(first_line)
-    return first_line_dict["retrieval_time"]

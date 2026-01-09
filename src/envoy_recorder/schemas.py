@@ -1,13 +1,7 @@
 from datetime import datetime, timedelta
-from typing import Any
 
 import patito as pt
 import polars as pl
-
-
-class RawEnvoyDataFrame(pt.Model):
-    retrieval_time: int = pt.Field(dtype=pl.Int64)
-    envoy_json: dict[str, Any] = pt.Field(dtype=pl.Struct)
 
 
 class ProcessedEnvoyDataFrame(pt.Model):

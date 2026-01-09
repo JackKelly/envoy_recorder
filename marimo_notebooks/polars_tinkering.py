@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.4"
+__generated_with = "0.19.0"
 app = marimo.App(width="full")
 
 
@@ -8,23 +8,26 @@ app = marimo.App(width="full")
 def _():
     import marimo as mo
     import polars as pl
-    return (pl,)
+    from pathlib import Path
+    return Path, pl
 
 
 @app.cell
-def _(pl):
-    df = pl.read_ndjson("solar_cache/archive_1767817142.jsonl")
+def _(Path, pl):
+    raw_df = pl.read_ndjson(Path("example_data/*.json"))
+    raw_df
+    return (raw_df,)
 
-    # After `read_ndjson`, there are just two columns in the DataFrame: `retrieval_time` and `data`.
-    # For each row, the `data` column contains a struct containing data for every inverter.
-    # That struct looks like this:
-    #
-    # {"553648384": {  # <--- device ID for each inverter.
-    #     "devName":"pcu", "sn":"482202080196", "active":true, "modGone":true, "channels": [
+
+@app.cell
+def _(pl, raw_df):
+    df = raw_df
+
+    # After `scan_ndjson` there's a column per device, plus a column for "deviceCount" and "deviceDataLimit".
+    # Each device column contains a struct that looks like this:
+
+    #    {"devName":"pcu", "sn":"482202080196", "active":true, "modGone":true, "channels": [
     #        {"chanEid":1627390225, "created":1767802330, etc...
-
-    # After `unnest("data")`, there will be a column for each device ID.
-    df = df.drop("retrieval_time").unnest("data")
 
     # Drop columns we don't care about
     df = df.drop("deviceCount", "deviceDataLimit")

@@ -3,15 +3,13 @@ from pathlib import Path
 
 import polars as pl
 
-from envoy_recorder.jsonl_to_dataframe import envoy_jsonl_to_dataframe
+from envoy_recorder.json_to_dataframe import envoy_json_files_to_dataframe
 
 
-def test_envoy_jsonl_to_dataframe_real_data():
-    jsonl_path = Path(__file__).parent / "test_data.jsonl"
-    df = envoy_jsonl_to_dataframe(jsonl_path)
+def test_envoy_json_to_dataframe_real_data():
+    json_path = Path(__file__).parent.parent / "example_envoy_json_data"
+    df = envoy_json_files_to_dataframe(json_path)
 
-    # We know there are 4 lines with 10 PCUs each, but they might be duplicates.
-    # From the read output of live.jsonl, they looked very similar.
     assert len(df) > 0
     assert "serial_number" in df.columns
     assert "period_end_time" in df.columns
@@ -21,7 +19,7 @@ def test_envoy_jsonl_to_dataframe_real_data():
 
 def test_filtering_non_pcu_devices(tmp_path: Path):
     # Create data with one PCU and one non-PCU
-    data = {
+    envoy_json = {
         "deviceCount": 2,
         "deviceDataLimit": 100,
         "123": {
@@ -71,14 +69,11 @@ def test_filtering_non_pcu_devices(tmp_path: Path):
         },
     }
 
-    jsonl_path = tmp_path / "filter.jsonl"
-    retrieval_time = 2000
-    envoy_json = json.dumps(data)
-    line = f'{{"retrieval_time": {retrieval_time}, "envoy_json": {envoy_json}}}'
-    with open(jsonl_path, "w") as f:
-        f.write(line + "\n")
+    json_path = tmp_path / "filter.json"
+    with open(json_path, "w") as f:
+        json.dump(envoy_json, f)
 
-    df = envoy_jsonl_to_dataframe(jsonl_path)
+    df = envoy_json_files_to_dataframe(json_path)
 
     # Only SN123 should be present
     assert len(df) == 1
@@ -130,15 +125,11 @@ def test_deduplication(tmp_path: Path):
         },
     }
 
-    jsonl_path = tmp_path / "dedup.jsonl"
-    envoy_json = json.dumps(device_data)
-    line1 = f'{{"retrieval_time": 2000, "envoy_json": {envoy_json}}}'
-    line2 = f'{{"retrieval_time": 2100, "envoy_json": {envoy_json}}}'
-    with open(jsonl_path, "w") as f:
-        f.write(line1 + "\n")
-        f.write(line2 + "\n")
+    for i in range(2):
+        with open(tmp_path / f"dedupe_{i}.json", mode="w") as f:
+            json.dump(device_data, f)
 
-    df = envoy_jsonl_to_dataframe(jsonl_path)
+    df = envoy_json_files_to_dataframe(tmp_path)
 
     # Should only have 1 row after deduplication
     assert len(df) == 1

@@ -1,29 +1,19 @@
+from pathlib import Path
+
 import patito as pt
 import polars as pl
 
 from envoy_recorder.schemas import ProcessedEnvoyDataFrame
 
 
-def envoy_jsonl_to_dataframe(jsonl) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
-    df = pl.read_ndjson(jsonl)
-    # We skip RawEnvoyDataFrame.validate(df) because patito has trouble
-    # with pl.Struct when the fields are dynamic.
-    return _process_dataframe_of_envoy_structs(df)
+def envoy_json_files_to_dataframe(p: Path) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
+    df = pl.scan_ndjson(p)
 
+    # After `scan_ndjson` there's a column per device, and columns "deviceCount" and
+    # "deviceDataLimit". Each device column contains a struct that looks like this:
 
-def _process_dataframe_of_envoy_structs(
-    df: pl.DataFrame,
-) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
-    # After `read_ndjson`, there are just two columns in the DataFrame: `retrieval_time` and
-    # `envoy_json`. For each row, the `data` column contains a struct containing data for every
-    # inverter. That struct looks like this:
-    #
-    # {"553648384": {  # <--- device ID for each inverter.
-    #     "devName":"pcu", "sn":"482202080196", "active":true, "modGone":true, "channels": [
-    #        {"chanEid":1627390225, "created":1767802330, etc...
-
-    # After `unnest("envoy_json")`, there will be a column for each device ID.
-    df = df.drop("retrieval_time").unnest("envoy_json")
+    #     {"devName": "pcu", "sn": "482202080196", "active": true, "modGone": true, "channels": [
+    #         {"chanEid": 1627390225, "created": 1767802330, etc...
 
     # Drop columns we don't care about
     df = df.drop(["deviceCount", "deviceDataLimit"], strict=False)
@@ -178,5 +168,7 @@ def _process_dataframe_of_envoy_structs(
             "watt_hours_today",
         ]
     )
+
+    df = df.collect()
 
     return ProcessedEnvoyDataFrame.validate(df)
