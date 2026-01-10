@@ -20,9 +20,9 @@ PARTITION_KEYS = ("year", "month")
 def directory_of_json_files_to_dataframe(directory: Path) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
     assert directory.exists(), f"{directory} does not exist!"
     assert directory.is_dir(), f"{directory} is not a directory!"
-    files = list(directory.glob("*.json"))
+    files = list(directory.glob("*.json")) + list(directory.glob("*.json.gz"))
     log.info("Loading %d json files into Polars DataFrame...", len(files))
-    assert len(files) > 0, f"No *.json files found in directory {directory}!"
+    assert len(files) > 0, f"No *.json or *.json.gz files found in directory {directory}!"
 
     df = pl.concat([pl.read_json(f) for f in files])
 

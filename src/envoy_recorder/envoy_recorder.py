@@ -1,3 +1,4 @@
+import gzip
 import shutil
 import time
 from datetime import date
@@ -55,9 +56,10 @@ class EnvoyRecorder:
 
     def _save_to_live_buffer(self, envoy_json: str):
         t = round(time.time())
-        filename = self._config.paths.live_buffer_incoming / f"{t}.json"
+        filename = self._config.paths.live_buffer_incoming / f"{t}.json.gz"
+        envoy_json = envoy_json.encode("UTF-8")
         log.debug("Writing Envoy JSON data to %s", filename)
-        with open(filename, "w") as f:
+        with gzip.open(filename, "wb") as f:
             f.write(envoy_json)
 
     def _live_buffer_is_old_enough_to_flush(self) -> bool:
