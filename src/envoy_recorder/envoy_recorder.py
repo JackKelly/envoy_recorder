@@ -57,7 +57,7 @@ class EnvoyRecorder:
     def _save_to_live_buffer(self, envoy_json: str):
         t = round(time.time())
         filename = self._config.paths.live_buffer_incoming / f"{t}.json.gz"
-        envoy_json = envoy_json.encode("UTF-8")
+        envoy_json: bytes = envoy_json.encode("UTF-8")
         log.debug("Writing Envoy JSON data to %s", filename)
         with gzip.open(filename, "wb") as f:
             f.write(envoy_json)
@@ -75,11 +75,13 @@ class EnvoyRecorder:
         return age_of_live_file_in_minutes > self._config.intervals.flush_buffer_every_n_minutes
 
     def _timestamp_of_oldest_file_in_live_buffer(self) -> int | None:
-        live_buffer_filenames = sorted(self._config.paths.live_buffer_incoming.glob("*.json"))
-        if len(live_buffer_filenames) == 0:
+        p = self._config.paths.live_buffer_incoming
+        filenames = list(p.glob("*.json")) + list(p.glob("*.json.gz"))
+        filenames.sort()
+        if len(filenames) == 0:
             return None
         else:
-            return int(live_buffer_filenames[0].stem)
+            return int(filenames[0].stem.split(".")[0])
 
     def _move_live_buffer(self) -> Path:
         """Moving is an atomic filesystem operation."""
