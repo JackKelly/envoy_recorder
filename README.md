@@ -46,4 +46,6 @@ partitioned format, and delete `processing_<timestamp>`.
    following `crontab` job: `* * * * * cd /home/jack/dev/python/envoy_recorder && /snap/bin/uv run
 scripts/record.py >> /home/jack/dev/python/envoy_recorder/logs/cron_record.log 2>&1`
 
+## Related repos
 
+See this repo for code that plots the data that envoy_recorder records: https://github.com/JackKelly/home_energy_dashboard
