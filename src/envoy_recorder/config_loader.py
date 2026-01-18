@@ -11,6 +11,7 @@ class PathsConfig(BaseModel):
     # The live_buffer path will contain two directories: incoming and processing_<timestamp>
     live_buffer: Path = Path("./data/live_buffer")
     parquet_archive: Path = Path("./data/parquet_archive")
+    storage_bucket: str  #  remote_name:bucket_name/path
 
     def create_directories(self) -> None:
         self.live_buffer_incoming.mkdir(parents=True, exist_ok=True)
@@ -30,11 +31,6 @@ class EnvoyConfig(BaseModel):
     token: str
 
 
-class HuggingFaceConfig(BaseModel):
-    repo_id: str
-    token: str
-
-
 class LoggingConfig(BaseModel):
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_file_for_record_script: Path | None = None
@@ -46,7 +42,6 @@ class EnvoyRecorderConfig(BaseSettings):
     paths: PathsConfig = Field(default_factory=PathsConfig)
     intervals: IntervalsConfig = Field(default_factory=IntervalsConfig)
     envoy: EnvoyConfig
-    hugging_face: HuggingFaceConfig
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
     @classmethod

@@ -1,5 +1,6 @@
 import gzip
 import shutil
+import subprocess
 import time
 from datetime import date
 from pathlib import Path
@@ -30,6 +31,7 @@ class EnvoyRecorder:
             log.info("Flushing incoming live buffer to parquet archive...")
             new_live_buffer_path = self._move_live_buffer()
             self._append_to_parquet(new_live_buffer_path)
+            self._copy_to_cloud_bucket()
 
     def _fetch_data_from_envoy(self) -> str:
         # Disable SSL Warnings because the Envoy uses self-signed certs.
@@ -145,3 +147,18 @@ class EnvoyRecorder:
         )
 
         return pt.DataFrame[ProcessedEnvoyDataFrame](df)
+
+    def _copy_to_cloud_bucket(self) -> None:
+        log.info("Uploading to bucket %s", self._config.paths.storage_bucket)
+        cmd = [
+            "rclone",
+            "copy",
+            self._config.paths.parquet_archive,
+            self._config.paths.storage_bucket,
+        ]
+        try:
+            subprocess.run(cmd, check=True, text=True, capture_output=True)
+        except subprocess.CalledProcessError as e:
+            log.exception("Upload Failed: %s", e.stderr)
+        else:
+            log.info("Successful upload!")
