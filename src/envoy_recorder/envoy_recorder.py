@@ -155,6 +155,7 @@ class EnvoyRecorder:
             "copy",
             self._config.paths.parquet_archive,
             self._config.paths.storage_bucket,
+            "--fast-list",  # Use fewer API calls to list objects (saves Class B ops)
         ]
         try:
             subprocess.run(cmd, check=True, text=True, capture_output=True)
