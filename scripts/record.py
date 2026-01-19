@@ -41,7 +41,7 @@ def start_sentry() -> str:
     return check_in_id
 
 
-def stop_sentry(check_in_id: str, status: MonitorStatus):
+def stop_sentry(check_in_id: str, status: type[MonitorStatus]):
     capture_checkin(
         monitor_slug=monitor_slug,
         check_in_id=check_in_id,
