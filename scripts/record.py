@@ -1,3 +1,4 @@
+from functools import partial
 from typing import Final
 
 import sentry_sdk
@@ -46,20 +47,17 @@ def start_sentry() -> str:
 def main():
     check_in_id = start_sentry()
     log.info("Starting up!")
+    stop_sentry = partial(capture_checkin, monitor_slug=MONITOR_SLUG, check_in_id=check_in_id)
     try:
         envoy_recorder = EnvoyRecorder()
         envoy_recorder.run()
     except:
         log.exception("Exception raised in main()!")
-        capture_checkin(
-            monitor_slug=MONITOR_SLUG, check_in_id=check_in_id, status=MonitorStatus.ERROR
-        )
+        stop_sentry(status=MonitorStatus.ERROR)
         raise
     else:
-        capture_checkin(
-            monitor_slug=MONITOR_SLUG, check_in_id=check_in_id, status=MonitorStatus.OK
-        )
         log.info("Finished successfully!")
+        stop_sentry(status=MonitorStatus.OK)
 
 
 if __name__ == "__main__":
