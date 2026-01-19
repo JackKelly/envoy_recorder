@@ -61,7 +61,7 @@ def main():
         raise
     else:
         stop_sentry(check_in_id, status=MonitorStatus.OK)
-        log.info("Finished successfully!\n")
+        log.info("Finished successfully!")
 
 
 if __name__ == "__main__":
