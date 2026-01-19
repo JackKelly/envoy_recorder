@@ -17,12 +17,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "altair>=6.0.0",
-    "google-genai>=1.56.0",  # For marimo LLM integration
-    "marimo>=0.18.4",
-    "numpy>=2.4.0",
     "pytest>=9.0.2",
-    "pydantic-ai>=1.40.0",  # For marimo LLM integration
     "ruff>=0.14.10",
 ]
 
