@@ -1,3 +1,5 @@
+from typing import Final
+
 import sentry_sdk
 from sentry_sdk.crons import capture_checkin
 from sentry_sdk.crons.consts import MonitorStatus
@@ -7,7 +9,7 @@ from envoy_recorder.logging import get_logger
 
 log = get_logger(__name__)
 
-monitor_slug = "envoy_reader"
+MONITOR_SLUG: Final[str] = "envoy_reader"
 
 
 def start_sentry() -> str:
@@ -35,18 +37,10 @@ def start_sentry() -> str:
 
     check_in_id = capture_checkin(
         monitor_config=monitor_config,
-        monitor_slug=monitor_slug,
+        monitor_slug=MONITOR_SLUG,
         status=MonitorStatus.IN_PROGRESS,
     )
     return check_in_id
-
-
-def stop_sentry(check_in_id: str, status: type[MonitorStatus]):
-    capture_checkin(
-        monitor_slug=monitor_slug,
-        check_in_id=check_in_id,
-        status=status,
-    )
 
 
 def main():
@@ -57,10 +51,14 @@ def main():
         envoy_recorder.run()
     except:
         log.exception("Exception raised in main()!")
-        stop_sentry(check_in_id, status=MonitorStatus.ERROR)
+        capture_checkin(
+            monitor_slug=MONITOR_SLUG, check_in_id=check_in_id, status=MonitorStatus.ERROR
+        )
         raise
     else:
-        stop_sentry(check_in_id, status=MonitorStatus.OK)
+        capture_checkin(
+            monitor_slug=MONITOR_SLUG, check_in_id=check_in_id, status=MonitorStatus.OK
+        )
         log.info("Finished successfully!")
 
 
