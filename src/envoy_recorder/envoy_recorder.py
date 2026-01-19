@@ -1,5 +1,6 @@
 import gzip
 import shutil
+import subprocess
 import time
 from datetime import date
 from pathlib import Path
@@ -29,7 +30,20 @@ class EnvoyRecorder:
         if self._live_buffer_is_old_enough_to_flush():
             log.info("Flushing incoming live buffer to parquet archive...")
             new_live_buffer_path = self._move_live_buffer()
-            self._append_to_parquet(new_live_buffer_path)
+            merged_df = self._append_to_parquet_in_memory(new_live_buffer_path)
+            shutil.rmtree(new_live_buffer_path)
+            if merged_df is None:
+                # Don't bother writing a new Parquet to disk if there's no new data. For example, this
+                # will happen at night, when the inverters stop reporting data but the envoy repeats the
+                # last reading from earlier in the day.
+                log.info("merged dataframe == old dataframe. Nothing to save to disk.")
+            else:
+                merged_df.write_parquet(
+                    self._config.paths.parquet_archive,
+                    partition_by=["year", "month"],
+                    compression="zstd",
+                )
+                self._copy_to_cloud_bucket()
 
     def _fetch_data_from_envoy(self) -> str:
         # Disable SSL Warnings because the Envoy uses self-signed certs.
@@ -91,7 +105,7 @@ class EnvoyRecorder:
         log.info("Moving %s to %s", old_path, new_path)
         return old_path.rename(new_path)
 
-    def _append_to_parquet(self, buffer_processing_path: Path) -> None:
+    def _append_to_parquet_in_memory(self, buffer_processing_path: Path) -> pl.DataFrame | None:
         new_df = directory_of_json_files_to_dataframe(buffer_processing_path)
         old_df = self._load_last_month_of_parquet_archive()
         merged_df = old_df.vstack(new_df)
@@ -107,17 +121,9 @@ class EnvoyRecorder:
             end.item(),
         )
         if merged_df.equals(old_df):
-            # Don't bother writing a new Parquet to disk if there's no new data. For example, this
-            # will happen at night, when the inverters stop reporting data but the envoy repeats the
-            # last reading from earlier in the day.
-            log.info("merged dataframe == old dataframe. Nothing to save to disk.")
+            return None
         else:
-            merged_df.write_parquet(
-                self._config.paths.parquet_archive,
-                partition_by=["year", "month"],
-                compression="zstd",
-            )
-        shutil.rmtree(buffer_processing_path)
+            return merged_df
 
     def _load_last_month_of_parquet_archive(self) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
         """Load from disk.
@@ -145,3 +151,19 @@ class EnvoyRecorder:
         )
 
         return pt.DataFrame[ProcessedEnvoyDataFrame](df)
+
+    def _copy_to_cloud_bucket(self) -> None:
+        log.info("Uploading to bucket %s", self._config.paths.storage_bucket)
+        cmd = [
+            "rclone",
+            "copy",
+            self._config.paths.parquet_archive,
+            self._config.paths.storage_bucket,
+            "--fast-list",  # Use fewer API calls to list objects (saves Class B ops)
+        ]
+        try:
+            subprocess.run(cmd, check=True, text=True, capture_output=True)
+        except subprocess.CalledProcessError as e:
+            log.exception("Upload Failed: %s", e.stderr)
+        else:
+            log.info("Successful upload!")

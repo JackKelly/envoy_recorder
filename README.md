@@ -38,6 +38,10 @@ partitioned format, and delete `processing_<timestamp>`.
    Enphase smartphone app. Go to menu (bottom right), and your system name should be displayed 
    near the top of the screen. For example, my system name is "Kelly").
 2. Pull this git repo.
+3. Install `rclone` (`sudo snap install rclone` on Ubuntu), and configure `rclone` to upload to your
+   cloud storage bucket with a named remote. (The name of the remote is the first part of
+   `config.paths.storage_bucket`). I upload to a Cloudflare R2 bucket. You only need "read & modify
+   objects" permissions.
 3. Create a `config.toml` file. See `src/envoy_recorder/config_loader.py` for details of what needs
    to go into `config.toml`.
 4. Test by running `uv run scripts/record.py`
@@ -45,4 +49,6 @@ partitioned format, and delete `processing_<timestamp>`.
    following `crontab` job: `* * * * * cd /home/jack/dev/python/envoy_recorder && /snap/bin/uv run
 scripts/record.py >> /home/jack/dev/python/envoy_recorder/logs/cron_record.log 2>&1`
 
+## Related repos
 
+See this repo for code that plots the data that envoy_recorder records: https://github.com/JackKelly/home_energy_dashboard
