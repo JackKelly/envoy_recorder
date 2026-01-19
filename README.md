@@ -5,6 +5,9 @@ Hugging Face.
 
 Note that this code has only been tested with Enphase IQ7+ micro-inverters.
 
+See [my blog post for more info](https://jack-kelly.com/blog/2026-01-19-plot-solar-pv), and a link
+to a visualisation my live data.
+
 This script does the following. Note that this script is designed to be called from cron once per
 minute.
 
