@@ -46,7 +46,7 @@ def start_sentry() -> str:
 
 def main():
     check_in_id = start_sentry()
-    log.info("Starting up!")
+    log.info("---------------------- Starting up! -----------------------------")
     stop_sentry = partial(capture_checkin, monitor_slug=MONITOR_SLUG, check_in_id=check_in_id)
     try:
         envoy_recorder = EnvoyRecorder()
