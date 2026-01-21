@@ -8,6 +8,7 @@ from pathlib import Path
 import patito as pt
 import polars as pl
 import requests
+import sentry_sdk
 import urllib3
 from requests import Response
 
@@ -84,6 +85,11 @@ class EnvoyRecorder:
         log.debug(
             "It has been %d seconds since the current live buffer was started.", age_in_seconds
         )
+        sentry_sdk.metrics.gauge(
+            "live_buffer.age",
+            age_in_seconds,
+            unit="seconds",
+        )
         assert age_in_seconds >= 0
         age_of_live_file_in_minutes = round(age_in_seconds / 60)
         return age_of_live_file_in_minutes > self._config.intervals.flush_buffer_every_n_minutes
@@ -120,6 +126,11 @@ class EnvoyRecorder:
             start.item(),
             end.item(),
         )
+        sentry_sdk.metrics.gauge(
+            "dataframe.height_after_merging",
+            merged_df.height,
+            unit="rows",
+        )
         if merged_df.equals(old_df):
             return None
         else:
@@ -150,11 +161,16 @@ class EnvoyRecorder:
             first_day_of_last_month.strftime("%Y-%m-%d"),
         )
 
+        sentry_sdk.metrics.gauge(
+            "dataframe.height_loaded_from_parquet_archive",
+            df.height,
+            unit="rows",
+        )
         return pt.DataFrame[ProcessedEnvoyDataFrame](df)
 
     def _copy_to_cloud_bucket(self) -> None:
         log.info("Uploading to bucket %s", self._config.paths.storage_bucket)
-        cmd = [
+        cmd: list[str | Path] = [
             "rclone",
             "copy",
             self._config.paths.parquet_archive,
