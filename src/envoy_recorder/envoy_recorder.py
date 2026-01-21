@@ -13,7 +13,10 @@ import urllib3
 from requests import Response
 
 from envoy_recorder.config_loader import EnvoyRecorderConfig
-from envoy_recorder.json_to_dataframe import PRIMARY_KEYS, directory_of_json_files_to_dataframe
+from envoy_recorder.json_to_dataframe import (
+    PRIMARY_KEYS,
+    convert_directory_of_json_files_to_dataframe,
+)
 from envoy_recorder.logging import get_logger
 from envoy_recorder.schemas import ProcessedEnvoyDataFrame
 
@@ -85,9 +88,9 @@ class EnvoyRecorder:
         log.debug(
             "It has been %d seconds since the current live buffer was started.", age_in_seconds
         )
-        sentry_sdk.metrics.gauge(
-            "live_buffer.age",
-            age_in_seconds,
+        sentry_sdk.metrics.distribution(
+            name="live_buffer.age",
+            value=age_in_seconds,
             unit="seconds",
         )
         assert age_in_seconds >= 0
@@ -112,7 +115,7 @@ class EnvoyRecorder:
         return old_path.rename(new_path)
 
     def _append_to_parquet_in_memory(self, buffer_processing_path: Path) -> pl.DataFrame | None:
-        new_df = directory_of_json_files_to_dataframe(buffer_processing_path)
+        new_df = convert_directory_of_json_files_to_dataframe(buffer_processing_path)
         old_df = self._load_last_month_of_parquet_archive()
         merged_df = old_df.vstack(new_df)
         merged_df = merged_df.unique(subset=PRIMARY_KEYS)
@@ -120,15 +123,22 @@ class EnvoyRecorder:
         start, end = merged_df.select(
             start=pl.col("period_end_time").min(), end=pl.col("period_end_time").max()
         )
+        n_rows_appended = merged_df.height - old_df.height
         log.info(
-            "The merged dataframe has %d rows of data, from %s to %s.",
+            "Appended %d rows. The merged dataframe now has %d rows of data, from %s to %s.",
+            n_rows_appended,
             merged_df.height,
             start.item(),
             end.item(),
         )
-        sentry_sdk.metrics.gauge(
-            "dataframe.height_after_merging",
-            merged_df.height,
+        sentry_sdk.metrics.distribution(
+            name="dataframe.n_rows_after_merging",
+            value=merged_df.height,
+            unit="rows",
+        )
+        sentry_sdk.metrics.distribution(
+            name="dataframe.n_rows_appended_after_de_dupe",
+            value=n_rows_appended,
             unit="rows",
         )
         if merged_df.equals(old_df):
@@ -161,9 +171,9 @@ class EnvoyRecorder:
             first_day_of_last_month.strftime("%Y-%m-%d"),
         )
 
-        sentry_sdk.metrics.gauge(
-            "dataframe.height_loaded_from_parquet_archive",
-            df.height,
+        sentry_sdk.metrics.distribution(
+            name="dataframe.n_rows_loaded_from_parquet_archive",
+            value=df.height,
             unit="rows",
         )
         return pt.DataFrame[ProcessedEnvoyDataFrame](df)

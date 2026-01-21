@@ -2,6 +2,7 @@ from pathlib import Path
 
 import patito as pt
 import polars as pl
+import sentry_sdk
 
 from envoy_recorder.logging import get_logger
 from envoy_recorder.schemas import ProcessedEnvoyDataFrame
@@ -17,7 +18,9 @@ PRIMARY_KEYS = ("serial_number", "period_end_time")
 PARTITION_KEYS = ("year", "month")
 
 
-def directory_of_json_files_to_dataframe(directory: Path) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
+def convert_directory_of_json_files_to_dataframe(
+    directory: Path,
+) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
     assert directory.exists(), f"{directory} does not exist!"
     assert directory.is_dir(), f"{directory} is not a directory!"
     files = list(directory.glob("*.json")) + list(directory.glob("*.json.gz"))
@@ -191,5 +194,8 @@ def directory_of_json_files_to_dataframe(directory: Path) -> pt.DataFrame[Proces
     )
 
     log.info("Successfully read %d rows of data into a Polars DataFrame.", df.height)
+    sentry_sdk.metrics.distribution(
+        name="dataframe.n_rows_loaded_from_json", value=df.height, unit="rows"
+    )
 
     return ProcessedEnvoyDataFrame.validate(df)
