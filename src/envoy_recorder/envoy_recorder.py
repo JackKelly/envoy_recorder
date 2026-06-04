@@ -2,7 +2,6 @@ import gzip
 import shutil
 import subprocess
 import time
-from datetime import date
 from pathlib import Path
 
 import patito as pt
@@ -116,7 +115,7 @@ class EnvoyRecorder:
 
     def _append_to_parquet_in_memory(self, buffer_processing_path: Path) -> pl.DataFrame | None:
         new_df = convert_directory_of_json_files_to_dataframe(buffer_processing_path)
-        old_df = self._load_last_month_of_parquet_archive()
+        old_df = self._load_relevant_parquet_archive(new_df)
         merged_df = old_df.vstack(new_df)
         merged_df = merged_df.unique(subset=PRIMARY_KEYS)
         merged_df = merged_df.sort(PRIMARY_KEYS)
@@ -146,7 +145,9 @@ class EnvoyRecorder:
         else:
             return merged_df
 
-    def _load_last_month_of_parquet_archive(self) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
+    def _load_relevant_parquet_archive(
+        self, new_df: pl.DataFrame
+    ) -> pt.DataFrame[ProcessedEnvoyDataFrame]:
         """Load from disk.
 
         If there is no parquet on disk then return an empty dataframe.
@@ -160,15 +161,29 @@ class EnvoyRecorder:
 
         df = pl.scan_parquet(self._config.paths.parquet_archive)
 
-        # The Parquet archive uses monthly Hive partitions. Load the last month of data:
-        last_date: date = df.select(pl.col("period_end_time").max()).collect().item().date()
-        first_day_of_last_month = last_date.replace(day=1)
-        df = df.filter(pl.col("period_end_time") >= first_day_of_last_month)
+        # Find which partitions are present in the new data
+        unique_months = new_df.select("year", "month").unique().to_dicts()
+
+        if not unique_months:
+            # If there's no new data, we don't need to load anything to merge
+            empty_df = pl.DataFrame(schema=ProcessedEnvoyDataFrame.dtypes)
+            return pt.DataFrame[ProcessedEnvoyDataFrame](empty_df)
+
+        # Build a filter expression to load only the relevant partitions.
+        # This is critical: Polars `write_parquet` with `partition_by` will overwrite ANY partition
+        # present in the DataFrame. Therefore, we MUST load the complete existing data for any
+        # partition we are going to write to, otherwise we will delete historical data.
+        expr = pl.lit(False)
+        for ym in unique_months:
+            expr = expr | ((pl.col("year") == ym["year"]) & (pl.col("month") == ym["month"]))
+
+        df = df.filter(expr)
         df = df.collect()
+
         log.info(
-            "Loaded %d rows from the parquet archive, starting at %s.",
+            "Loaded %d rows from the parquet archive for partitions: %s",
             df.height,
-            first_day_of_last_month.strftime("%Y-%m-%d"),
+            unique_months,
         )
 
         sentry_sdk.metrics.distribution(
