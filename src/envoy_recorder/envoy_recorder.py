@@ -54,7 +54,7 @@ class EnvoyRecorder:
 
         token = self._config.envoy.token
         ip_address = self._config.envoy.ip_address
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
         url = f"https://{ip_address}/ivp/pdm/device_data"
 
         log.debug("Fetching data from %s...", url)
