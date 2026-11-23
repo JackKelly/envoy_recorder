@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from ipaddress import IPv4Address
 from pathlib import Path
 
 import polars as pl
@@ -30,7 +31,7 @@ def temp_envoy_recorder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Envo
         ),
         intervals=IntervalsConfig(),
         envoy=EnvoyConfig(
-            ip_address="127.0.0.1",
+            ip_address=IPv4Address("127.0.0.1"),
             token="test_token",
         ),
         logging=LoggingConfig(level="DEBUG"),

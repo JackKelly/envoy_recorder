@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import sentry_sdk
 from sentry_sdk.crons import capture_checkin
@@ -7,6 +7,9 @@ from sentry_sdk.crons.consts import MonitorStatus
 
 from envoy_recorder.envoy_recorder import EnvoyRecorder
 from envoy_recorder.logging import get_logger
+
+if TYPE_CHECKING:
+    from sentry_sdk._types import MonitorConfig
 
 log = get_logger(__name__)
 
@@ -23,7 +26,7 @@ def start_sentry() -> str:
     )
 
     # All keys except 'schedule' are optional
-    monitor_config = {
+    monitor_config: "MonitorConfig" = {
         "schedule": {"type": "crontab", "value": "* * * * *"},
         "timezone": "Europe/London",
         # If an expected check-in doesn't come in 'checkin_margin' minutes, it'll be considered missed
