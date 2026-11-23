@@ -5,14 +5,14 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from envoy_recorder.envoy_recorder import EnvoyRecorder
 from envoy_recorder.config_loader import (
-    EnvoyRecorderConfig,
-    PathsConfig,
-    IntervalsConfig,
     EnvoyConfig,
+    EnvoyRecorderConfig,
+    IntervalsConfig,
     LoggingConfig,
+    PathsConfig,
 )
+from envoy_recorder.envoy_recorder import EnvoyRecorder
 from envoy_recorder.schemas import ProcessedEnvoyDataFrame
 
 

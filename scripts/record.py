@@ -16,17 +16,13 @@ log = get_logger(__name__)
 MONITOR_SLUG: Final[str] = "envoy_reader"
 
 
-def start_sentry() -> str:
+def start_sentry() -> str | None:
     sentry_sdk.init(
         dsn="https://fed4b02053480412686e0cdb49e8c7bd@o4510693003034624.ingest.de.sentry.io/4510693008146512",
-        # Add data like request headers and IP for users,
-        # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
-        send_default_pii=True,
-        enable_logs=True,
     )
 
     # All keys except 'schedule' are optional
-    monitor_config: "MonitorConfig" = {
+    monitor_config: MonitorConfig = {
         "schedule": {"type": "crontab", "value": "* * * * *"},
         "timezone": "Europe/London",
         # If an expected check-in doesn't come in 'checkin_margin' minutes, it'll be considered missed

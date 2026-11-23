@@ -1,3 +1,4 @@
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -111,7 +112,7 @@ def test_load_invalid_toml(tmp_path: Path) -> None:
     config_file = tmp_path / "config.toml"
     config_file.write_text("invalid = [toml")
 
-    with pytest.raises(Exception):  # tomllib.TOMLDecodeError or similar
+    with pytest.raises(tomllib.TOMLDecodeError):
         EnvoyRecorderConfig.load(str(config_file))
 
 

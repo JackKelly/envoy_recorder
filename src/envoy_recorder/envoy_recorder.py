@@ -3,7 +3,6 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import cast
 
 import patito as pt
 import polars as pl
@@ -178,9 +177,7 @@ class EnvoyRecorder:
         for ym in unique_months:
             expr = expr | ((pl.col("year") == ym["year"]) & (pl.col("month") == ym["month"]))
 
-        # ty can't see through the decorators on LazyFrame.collect(), so it types the result as
-        # `InProcessQuery | DataFrame`. Without `background=True`, collect() returns a DataFrame.
-        df = cast(pl.DataFrame, df.filter(expr).collect())
+        df = df.filter(expr).collect()
 
         log.info(
             "Loaded %d rows from the parquet archive for partitions: %s",
